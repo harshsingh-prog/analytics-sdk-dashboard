@@ -1,0 +1,39 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Demo Restaurant</title><script src="config.js"></script><script src="sdk.js"></script>
+<style>
+:root{--bg:#faf8f5;--fg:#222;--card:#fff;--ac:#c2410c;--mu:#777;--bd:#e5e0d8}
+@media(prefers-color-scheme:dark){:root{--bg:#161412;--fg:#eee;--card:#211e1b;--mu:#999;--bd:#38332e}}
+body{font:16px system-ui;background:var(--bg);color:var(--fg);margin:0}main{max-width:900px;margin:auto;padding:24px;display:grid;gap:24px;grid-template-columns:2fr 1fr}
+@media(max-width:700px){main{grid-template-columns:1fr}}h1{grid-column:1/-1;margin:0}
+.card{background:var(--card);border:1px solid var(--bd);border-radius:12px;padding:14px;display:flex;justify-content:space-between;align-items:center;margin-bottom:10px}
+button{background:var(--ac);color:#fff;border:0;border-radius:8px;padding:8px 14px;cursor:pointer}button:disabled{opacity:.5}
+.mu{color:var(--mu)}#msg{margin-top:10px}a{color:var(--ac)}</style></head><body><main>
+<h1>🍽️ Demo Restaurant</h1>
+<section id="menu"></section>
+<aside><div class="card" style="display:block"><h3 style="margin-top:0">Your order</h3><div id="cart" class="mu">Cart is empty</div>
+<p><b>Total: <span id="total">₹0.00</span></b></p><button id="go" disabled>Place order</button><div id="msg"></div></div>
+<p class="mu"><a href="dashboard.html">Analytics dashboard →</a></p></aside></main>
+<script>
+const MENU=[["burger-001","Classic Burger",24900],["pizza-001","Margherita Pizza",32900],["pasta-001","Alfredo Pasta",28900],["dessert-001","Tiramisu",17900]];
+const inr=p=>"₹"+(p/100).toFixed(2), cart={}; let idem=crypto.randomUUID(), busy=false;
+const $=id=>document.getElementById(id);
+$("menu").innerHTML=MENU.map(([id,n,p])=>`<div class="card"><div><b>${n}</b><div class="mu">${inr(p)}</div></div><button data-id="${id}">Add</button></div>`).join("");
+$("menu").onclick=e=>{const id=e.target.dataset.id;if(!id)return;cart[id]=(cart[id]||0)+1;
+  Analytics.track("add_to_cart",{item_id:id,qty:cart[id]});render()};
+function render(){const ids=Object.keys(cart);let t=0;
+  $("cart").innerHTML=ids.length?ids.map(id=>{const[,n,p]=MENU.find(m=>m[0]===id);t+=p*cart[id];
+    return`<div>${n} × ${cart[id]} <a href="#" data-rm="${id}">remove</a></div>`}).join(""):"Cart is empty";
+  $("total").textContent=inr(t);$("go").disabled=!ids.length||busy}
+$("cart").onclick=e=>{const id=e.target.dataset.rm;if(!id)return;e.preventDefault();if(--cart[id]<=0)delete cart[id];render()};
+$("go").onclick=async()=>{busy=true;render();$("msg").textContent="Placing order…";
+  Analytics.track("order_submitted",{item_count:Object.values(cart).reduce((a,b)=>a+b,0)});
+  try{const C=ANALYTICS_CONFIG,r=await fetch(C.endpoint+"/orders",{method:"POST",
+    headers:{"Content-Type":"application/json","X-API-Key":C.writeKey,"Idempotency-Key":idem},
+    body:JSON.stringify({items:Object.entries(cart).map(([item_id,qty])=>({item_id,qty})),anonymous_id:Analytics.anonymousId,session_id:Analytics.sessionId})});
+    const d=await r.json();if(!r.ok)throw new Error(d.error?.message||r.status);
+    $("msg").textContent=`✅ Order ${d.order_id} confirmed — ${inr(d.total)}`;
+    for(const k in cart)delete cart[k];idem=crypto.randomUUID();  // new key only after success; retries reuse it
+  }catch(e){$("msg").textContent="❌ "+e.message+" — you can safely retry."}
+  busy=false;render()};
+Analytics.track("page_view",{title:document.title});render();
+</script></body></html>

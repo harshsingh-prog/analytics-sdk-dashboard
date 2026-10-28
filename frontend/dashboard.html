@@ -1,0 +1,39 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Analytics Dashboard</title>
+<style>
+:root{--bg:#f5f6f8;--fg:#1c2330;--card:#fff;--ac:#2563eb;--mu:#6b7280;--bd:#e3e6eb}
+@media(prefers-color-scheme:dark){:root{--bg:#10131a;--fg:#e8ebf0;--card:#1a1f2b;--mu:#8b93a3;--bd:#2b3242}}
+body{font:14px system-ui;background:var(--bg);color:var(--fg);margin:0;padding:20px}.w{max-width:1100px;margin:auto}
+.bar{display:flex;gap:8px;flex-wrap:wrap;align-items:center;margin-bottom:16px}h1{font-size:20px;margin:0 auto 0 0}
+input,select,button{padding:7px 10px;border-radius:6px;border:1px solid var(--bd);background:var(--card);color:var(--fg)}button{background:var(--ac);color:#fff;border:0;cursor:pointer}
+.g{display:grid;gap:14px;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));margin-bottom:14px}.g2{display:grid;gap:14px;grid-template-columns:repeat(auto-fit,minmax(320px,1fr))}
+.c{background:var(--card);border:1px solid var(--bd);border-radius:10px;padding:14px;overflow-x:auto}.k{font-size:24px;font-weight:600}.mu{color:var(--mu);font-size:12px}
+table{width:100%;border-collapse:collapse}td,th{text-align:left;padding:4px 6px;border-bottom:1px solid var(--bd);font-size:13px}h3{margin:0 0 8px;font-size:14px}
+.bk{display:flex;align-items:flex-end;gap:2px;height:90px}.bk i{flex:1;background:var(--ac);min-height:1px;border-radius:2px 2px 0 0}#err{color:#dc2626;margin-bottom:10px}</style></head><body><div class="w">
+<div class="bar"><h1>📊 Analytics</h1><input id="key" type="password" placeholder="Read key (rk_…)" size="26">
+<select id="rng"><option value="1">Last 24h</option><option value="7" selected>Last 7 days</option><option value="30">Last 30 days</option></select><button id="rf">Refresh</button></div>
+<div id="err"></div><div class="g" id="kpi"></div>
+<div class="c" style="margin-bottom:14px"><h3>Events per day</h3><div class="bk" id="trend"></div><div class="mu" id="tl"></div></div>
+<div class="g2"><div class="c"><h3>Top pages</h3><table id="pages"></table></div><div class="c"><h3>Event breakdown</h3><table id="bd"></table></div>
+<div class="c"><h3>Recent orders</h3><table id="ord"></table></div><div class="c"><h3>Recent events</h3><table id="rec"></table></div></div></div>
+<script>
+const $=id=>document.getElementById(id),inr=p=>"₹"+(p/100).toFixed(2),esc=s=>String(s).replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+$("key").value=sessionStorage.rk||"";
+async function get(path,extra={}){const e=new Date(Date.now()+6e4),s=new Date(e-$("rng").value*864e5);
+  const u=new URL("/api/v1/analytics/"+path,location.origin);u.search=new URLSearchParams({start:s.toISOString(),end:e.toISOString(),...extra});
+  const r=await fetch(u,{headers:{"X-API-Key":$("key").value.trim()}});const d=await r.json();
+  if(!r.ok)throw new Error(d.error?.message||r.status);return d}
+const rows=(a,f)=>a.length?a.map(f).join(""):'<tr><td class="mu">No data</td></tr>';
+async function load(){$("err").textContent="";sessionStorage.rk=$("key").value.trim();if(!sessionStorage.rk)return;
+  try{const[o,p,t,b,r,od]=await Promise.all([get("overview"),get("pages"),get("events",{interval:"day"}),get("event-breakdown"),get("recent-events",{limit:10}),get("recent-orders")]);
+    $("kpi").innerHTML=[["Page views",o.page_views],["Unique visitors",o.unique_visitors],["Sessions",o.sessions],["Events",o.events],["Orders",o.orders_created],["Revenue",inr(o.revenue_minor)]]
+      .map(([l,v])=>`<div class="c"><div class="mu">${l}</div><div class="k">${v}</div></div>`).join("");
+    const days={};t.series.forEach(x=>days[x.bucket.slice(0,10)]=(days[x.bucket.slice(0,10)]||0)+x.count);
+    const ks=Object.keys(days).sort(),mx=Math.max(1,...Object.values(days));
+    $("trend").innerHTML=ks.map(k=>`<i title="${k}: ${days[k]}" style="height:${days[k]/mx*100}%"></i>`).join("");$("tl").textContent=ks.length?`${ks[0]} → ${ks.at(-1)} (peak ${mx}/day)`:"No data";
+    $("pages").innerHTML=rows(p.pages,x=>`<tr><td>${esc(x.path)}</td><td>${x.views} views</td><td>${x.visitors} visitors</td></tr>`);
+    $("bd").innerHTML=rows(b.breakdown,x=>`<tr><td>${esc(x.event_name)}</td><td>${x.count}</td></tr>`);
+    $("ord").innerHTML=rows(od.orders,x=>`<tr><td>${x.order_id}</td><td>${x.item_count} items</td><td>${inr(x.total)}</td><td class="mu">${new Date(x.created_at).toLocaleString()}</td></tr>`);
+    $("rec").innerHTML=rows(r.events,x=>`<tr><td>${esc(x.event_name)}</td><td>${x.source}</td><td class="mu">${new Date(x.occurred_at).toLocaleTimeString()}</td></tr>`);
+  }catch(e){$("err").textContent="⚠ "+e.message}}
+$("rf").onclick=load;$("rng").onchange=load;load();setInterval(load,10000);
+</script></body></html>
